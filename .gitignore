@@ -1,0 +1,10 @@
+# Mac OS
+.DS_Store
+
+# Temporary outputs
+result/
+input.mp4
+
+# Editor config
+.vscode/
+.idea/
