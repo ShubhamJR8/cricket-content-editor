@@ -31,13 +31,18 @@ A high-performance, subtractive video editing tool designed specifically for pro
 ### Running the Backend
 
 1. Navigate to the `/backend` directory.
-2. Run the Java application using Maven or your preferred IDE.
+2. Run the Java application using the Maven wrapper: `./mvnw spring-boot:run`
 
 ### Running the Frontend
 
 1. Navigate to the `/frontend` directory.
 2. Install dependencies: `npm install`
 3. Start the development server: `npm run dev` (or `npm start` depending on your setup)
+
+### Usage & File Paths
+
+- **Input File:** The path to the source video is set directly from the Frontend UI. In the Settings Bar at the top of the video player, you will see a text input for **Server Video Path (Absolute Path)**. You must provide the absolute path to your video file on the system running the backend server.
+- **Output File:** Sliced/exported videos are automatically saved in the root directory where the backend server was started (e.g., `backend/output_<timestamp>.mp4`).
 
 ## 📝 License
 
