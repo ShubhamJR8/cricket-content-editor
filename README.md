@@ -31,7 +31,7 @@ A high-performance, subtractive video editing tool designed specifically for pro
 ### Running the Backend
 
 1. Navigate to the `/backend` directory.
-2. Run the Java application using the Maven wrapper: `./mvnw spring-boot:run`
+2. Run the Java application using the Maven wrapper: `mvn spring-boot:run`
 
 ### Running the Frontend
 
