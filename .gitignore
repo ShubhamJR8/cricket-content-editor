@@ -8,3 +8,15 @@ input.mp4
 # Editor config
 .vscode/
 .idea/
+
+# Node/NPM
+node_modules/
+dist/
+release/
+
+# Java/Spring Boot
+target/
+bin/
+
+# Electron Builder
+dist-electron/
