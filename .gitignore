@@ -5,6 +5,25 @@
 result/
 input.mp4
 
+# Node dependencies (Recursive)
+**/node_modules/
+node_modules/
+
+# Build Artifacts
+**/dist/
+dist/
+dist_desktop/
+
+# Bundled Binaries & Runtimes
+bin/darwin/
+bin/win32/
+bin/linux/
+jre/
+
+# Logs
+*.log
+npm-debug.log*
+
 # Editor config
 .vscode/
 .idea/

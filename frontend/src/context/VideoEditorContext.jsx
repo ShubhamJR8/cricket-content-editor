@@ -15,6 +15,22 @@ export const VideoEditorProvider = ({ children }) => {
     return saved || '../input.mp4';
   });
 
+  const [outputPath, setOutputPath] = useState(() => {
+    const saved = localStorage.getItem('editor_outputPath');
+    if (saved) return saved;
+    const isElectron = window.process && window.process.type === 'renderer' || 
+                      (window.require && window.require('electron'));
+    if (isElectron) {
+      const home = window.process.env.HOME || window.process.env.USERPROFILE;
+      if (home) {
+        // Use forward slashes for cross-platform compatibility in many libs, 
+        // but Electron path join is better. 
+        return `${home.replace(/\\/g, '/')}/Downloads/Cricket_Edits`;
+      }
+    }
+    return 'result';
+  });
+
   const videoRef = useRef(null);
   const playheadRef = useRef(null);
   const trackerRef = useRef(null);
@@ -59,6 +75,31 @@ export const VideoEditorProvider = ({ children }) => {
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [killSwitchError, setKillSwitchError] = useState("");
+
+  useEffect(() => {
+    const checkKillSwitch = async () => {
+      try {
+        const res = await axios.get("https://raw.githubusercontent.com/ShubhamJR8/cricket-content-editor/main/beta-status.json");
+        if (res.data && res.data.active === false) {
+           setKillSwitchError("This Beta has concluded. Please visit our website to upgrade to the paid version.");
+        }
+        localStorage.setItem('editor_last_network_check', Date.now().toString());
+      } catch (err) {
+        // Air gap check
+        const lastCheck = localStorage.getItem('editor_last_network_check');
+        if (!lastCheck) {
+           setKillSwitchError("Internet connection required for initial beta verification.");
+        } else {
+           const timeSince = Date.now() - parseInt(lastCheck);
+           if (timeSince > 3 * 24 * 60 * 60 * 1000 || timeSince < 0) {
+              setKillSwitchError("App has been offline for too long. Please connect to the internet to verify beta status.");
+           }
+        }
+      }
+    };
+    checkKillSwitch();
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('editor_players', JSON.stringify({ timestamp: Date.now(), data: players }));
@@ -71,6 +112,10 @@ export const VideoEditorProvider = ({ children }) => {
   useEffect(() => {
     localStorage.setItem('editor_backendPath', backendPath);
   }, [backendPath]);
+
+  useEffect(() => {
+    localStorage.setItem('editor_outputPath', outputPath);
+  }, [outputPath]);
 
   const clearSession = () => {
     if (window.confirm("Are you sure you want to clear all clips and players? This cannot be undone.")) {
@@ -281,12 +326,25 @@ export const VideoEditorProvider = ({ children }) => {
     setDownloadUrls([]);
 
     try {
+      let machineId = "browser-dev-mode";
+      const isElectron = window.process && window.process.type === 'renderer' || 
+                        (window.require && window.require('electron'));
+      if (isElectron) {
+        const { ipcRenderer } = window.require('electron');
+        machineId = await ipcRenderer.invoke('get-machine-id');
+      }
+
       const payload = {
         inputFile: backendPath,
+        resultDir: outputPath,
         groups: groups
       };
 
-      const res = await axios.post('http://localhost:8080/api/video/slice-multi', payload);
+      const config = {
+        headers: { 'X-Machine-ID': machineId }
+      };
+
+      const res = await axios.post('http://localhost:8080/api/video/slice-multi', payload, config);
       const jobId = res.data.jobId;
 
       if (!jobId) {
@@ -326,8 +384,12 @@ export const VideoEditorProvider = ({ children }) => {
 
     } catch (err) {
       console.error(err);
-      const errorMsg = err.response?.data?.message || err.response?.data || err.message;
-      setResultMsg(`Error: ${errorMsg}`);
+      if (err.response && err.response.status === 403) {
+        setResultMsg(`License Error: ${err.response.data?.error || 'Invalid or Expired License. Please activate.'}`);
+      } else {
+        const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message;
+        setResultMsg(`Error: ${errorMsg}`);
+      }
       setIsProcessing(false);
     }
   };
@@ -444,6 +506,48 @@ export const VideoEditorProvider = ({ children }) => {
     });
   };
 
+  const selectVideoViaElectron = async () => {
+    // Check if we are in Electron
+    const isElectron = window.process && window.process.type === 'renderer' || 
+                      (window.require && window.require('electron'));
+    
+    if (isElectron) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        const absolutePath = await ipcRenderer.invoke('open-file-dialog');
+        if (absolutePath) {
+          console.log("Selected absolute path:", absolutePath);
+          setBackendPath(absolutePath);
+          // We still need to trigger handleFileChange with a blob for preview if we want
+          // But for now, setting the backend path is the priority for Point 3.
+          // Optional: We could try to fetch the file via file:// protocol if security allows
+        }
+      } catch (err) {
+        console.error("Failed to open Electron file dialog:", err);
+      }
+    } else {
+      // Fallback for browser: trigger the hidden file input
+      document.getElementById('hidden-file-input')?.click();
+    }
+  };
+
+  const selectOutputFolderViaElectron = async () => {
+    const isElectron = window.process && window.process.type === 'renderer' || 
+                      (window.require && window.require('electron'));
+    
+    if (isElectron) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        const folderPath = await ipcRenderer.invoke('open-directory-dialog');
+        if (folderPath) {
+          setOutputPath(folderPath);
+        }
+      } catch (err) {
+        console.error("Failed to open Electron directory dialog:", err);
+      }
+    }
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -480,6 +584,26 @@ export const VideoEditorProvider = ({ children }) => {
     });
   };
 
+
+
+  const handleActivateLicense = async () => {
+    try {
+      let machineId = "browser-dev-mode";
+      const isElectron = window.process && window.process.type === 'renderer' || 
+                        (window.require && window.require('electron'));
+      if (isElectron) {
+        const { ipcRenderer } = window.require('electron');
+        machineId = await ipcRenderer.invoke('get-machine-id');
+      }
+
+      const res = await axios.post('http://localhost:8080/api/license/activate', { machineId });
+      alert("Free Beta activated successfully! Expires in 30 days.");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to activate beta: " + (err.response?.data?.error || err.message));
+    }
+  };
+
   const value = {
     videoFile, setVideoFile,
     videoUrl, setVideoUrl,
@@ -498,7 +622,9 @@ export const VideoEditorProvider = ({ children }) => {
     clearSession, addPlayer, updatePlayerName, removeSegment, formatTime,
     handleTimeUpdate, handleLoadedData, togglePlay, jumpTo, dropMarker,
     handleTimelineClick, handleApplyCuts, handleCopyUnassigned, handleBagImport,
-    handleImport, onDragEnd, handleFileChange, loadDemoVideo, downloadAllFiles
+    handleImport, onDragEnd, handleFileChange, selectVideoViaElectron, 
+    outputPath, setOutputPath, selectOutputFolderViaElectron,
+    loadDemoVideo, downloadAllFiles, handleActivateLicense, killSwitchError
   };
 
   return (

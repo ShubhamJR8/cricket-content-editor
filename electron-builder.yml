@@ -1,0 +1,40 @@
+appId: com.cricket.reelslicer
+productName: Cricket Reel Slicer
+directories:
+  output: dist_desktop
+extraMetadata:
+  main: dist-main.js
+files:
+  - dist-main.js
+  - package.json
+  - node_modules/**/*
+  - frontend/dist/**/*
+extraResources:
+  - from: backend/target/videoslicer-0.0.1-SNAPSHOT.jar
+    to: backend.jar
+  - from: jre
+    to: jre
+nsis:
+  oneClick: true
+  allowToChangeInstallationDirectory: false
+  createDesktopShortcut: true
+mac:
+  target: dmg
+  category: public.app-category.video
+  extraResources:
+    - from: bin/darwin
+      to: bin/darwin
+win:
+  target: nsis
+  extraResources:
+    - from: bin/win32
+      to: bin/win32
+linux:
+  target: AppImage
+  extraResources:
+    - from: bin/linux
+      to: bin/linux
+publish:
+  provider: github
+  owner: ShubhamJR8
+  repo: cricket-content-editor

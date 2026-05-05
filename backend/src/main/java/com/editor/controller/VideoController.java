@@ -20,9 +20,10 @@ public class VideoController {
     public record SliceRequest(String inputFile, String outputFile, List<FfmpegService.Segment> segments) {}
 
     @PostMapping("/slice")
-    public String sliceVideo(@RequestBody SliceRequest request) {
+    public String sliceVideo(@RequestBody SliceRequest request, jakarta.servlet.http.HttpServletRequest req) {
         try {
-            return ffmpegService.processVideo(request.inputFile(), request.segments(), request.outputFile());
+            String licenseId = (String) req.getAttribute("licenseId");
+            return ffmpegService.processVideo(request.inputFile(), request.segments(), request.outputFile(), null, licenseId);
         } catch (Exception e) {
             e.printStackTrace();
             return "Error: " + e.getMessage();
@@ -30,12 +31,13 @@ public class VideoController {
     }
 
     public record SliceGroup(String playerId, String playerName, List<FfmpegService.Segment> segments) {}
-    public record SliceMultiRequest(String inputFile, List<SliceGroup> groups) {}
+    public record SliceMultiRequest(String inputFile, String resultDir, List<SliceGroup> groups) {}
 
     @PostMapping("/slice-multi")
-    public ResponseEntity<?> sliceMultiVideo(@RequestBody SliceMultiRequest request) {
+    public ResponseEntity<?> sliceMultiVideo(@RequestBody SliceMultiRequest request, jakarta.servlet.http.HttpServletRequest req) {
         try {
-            String jobId = ffmpegService.processMultipleGroupsAsync(request.inputFile(), request.groups());
+            String licenseId = (String) req.getAttribute("licenseId");
+            String jobId = ffmpegService.processMultipleGroupsAsync(request.inputFile(), request.groups(), request.resultDir(), licenseId);
             return ResponseEntity.ok(Map.of("jobId", jobId));
         } catch (Exception e) {
             e.printStackTrace();
