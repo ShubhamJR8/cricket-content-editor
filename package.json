@@ -1,0 +1,41 @@
+{
+  "name": "cricket-reel-slicer",
+  "productName": "Cricket Reel Slicer",
+  "version": "1.0.0",
+  "description": "High-performance highlight generator for cricket match footage.",
+  "main": "main.js",
+  "scripts": {
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && ./mvnw spring-boot:run",
+    "dev:desktop": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"wait-on http://localhost:8080/actuator/health && NODE_ENV=development electron .\"",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && ./mvnw clean package -DskipTests",
+    "obfuscate:main": "javascript-obfuscator main.js --output dist-main.js",
+    "prepare:desktop": "node scripts/download-ffmpeg.js && ./scripts/build-jre.sh",
+    "dist": "npm run prepare:desktop && npm run build:frontend && npm run build:backend && npm run obfuscate:main && electron-builder"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShubhamJR8/cricket-content-editor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ShubhamJR8/cricket-content-editor/issues"
+  },
+  "homepage": "https://github.com/ShubhamJR8/cricket-content-editor#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^41.5.0",
+    "electron-builder": "^26.8.1",
+    "javascript-obfuscator": "^5.4.2",
+    "wait-on": "^9.0.5"
+  },
+  "dependencies": {
+    "ffbinaries": "^1.1.6",
+    "node-machine-id": "^1.1.12",
+    "tree-kill": "^1.2.2"
+  }
+}

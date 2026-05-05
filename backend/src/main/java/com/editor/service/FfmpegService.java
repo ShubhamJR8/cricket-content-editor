@@ -11,6 +11,21 @@ import java.util.logging.Logger;
 public class FfmpegService {
 
     private static final Logger log = Logger.getLogger(FfmpegService.class.getName());
+    
+    @org.springframework.beans.factory.annotation.Value("${ffmpeg.path:ffmpeg}")
+    private String ffmpegPath;
+
+    @org.springframework.beans.factory.annotation.Value("${ffprobe.path:ffprobe}")
+    private String ffprobePath;
+
+    public void setFfmpegPath(String path) {
+        this.ffmpegPath = path;
+    }
+
+    public void setFfprobePath(String path) {
+        this.ffprobePath = path;
+        log.info("FFprobe path set to: " + path);
+    }
 
     // Thread pool to restrict concurrency max 2 parallel encodes
     private final ExecutorService executorService = Executors.newFixedThreadPool(2);
@@ -27,16 +42,19 @@ public class FfmpegService {
         return jobMap.get(jobId);
     }
 
-    public String processMultipleGroupsAsync(String inputVideo, List<com.editor.controller.VideoController.SliceGroup> groups) {
+    public String processMultipleGroupsAsync(String inputVideo, List<com.editor.controller.VideoController.SliceGroup> groups, String resultDir, String licenseId) {
         String jobId = UUID.randomUUID().toString();
         JobStatus status = new JobStatus();
         status.status = "PROCESSING";
         status.message = "Initializing...";
         jobMap.put(jobId, status);
+        
+        // Ensure resultDir is valid
+        final String finalResultDir = (resultDir != null && !resultDir.trim().isEmpty()) ? resultDir : "result";
 
         CompletableFuture.runAsync(() -> {
             try {
-                Map<String, String> results = processMultipleGroups(inputVideo, groups);
+                Map<String, String> results = processMultipleGroups(inputVideo, groups, finalResultDir, licenseId);
                 JobStatus updatedStatus = jobMap.get(jobId);
                 updatedStatus.status = "COMPLETED";
                 updatedStatus.message = "Success";
@@ -55,7 +73,7 @@ public class FfmpegService {
         return jobId;
     }
 
-    public Map<String, String> processMultipleGroups(String inputVideo, List<com.editor.controller.VideoController.SliceGroup> groups) throws Exception {
+    public Map<String, String> processMultipleGroups(String inputVideo, List<com.editor.controller.VideoController.SliceGroup> groups, String resultDir, String licenseId) throws Exception {
         Map<String, String> resultUrls = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> futures = new ArrayList<>();
         
@@ -69,9 +87,10 @@ public class FfmpegService {
                     String safeName = group.playerName().replaceAll("[^a-zA-Z0-9.-]", "_");
                     String outputFilename = safeName + "_highlights_" + timestamp + ".mp4";
                     
-                    String absoluteOutputPath = processVideo(inputVideo, group.segments(), outputFilename);
+                    String absoluteOutputPath = processVideo(inputVideo, group.segments(), outputFilename, resultDir, licenseId);
                     
-                    String downloadUrl = "/result/" + Paths.get(absoluteOutputPath).getFileName().toString();
+                    // Return absolute path if it's a custom dir, or a relative URL for browser serving
+                    String downloadUrl = absoluteOutputPath;
                     resultUrls.put(group.playerId(), downloadUrl);
                 } catch (Exception e) {
                     throw new CompletionException("Failed group " + group.playerId(), e);
@@ -84,35 +103,40 @@ public class FfmpegService {
         return resultUrls;
     }
 
-    public String processVideo(String inputVideo, List<Segment> segments, String outputVideo) throws Exception {
+    public String processVideo(String inputVideo, List<Segment> segments, String outputVideo, String customResultDir, String licenseId) throws Exception {
         Path inputPath = Paths.get(inputVideo);
         if (!Files.exists(inputPath)) {
-            // Also check parent directory just in case it's in cricket_content_editor root
+            // Fallback checking logic for relative paths
             if (Files.exists(Paths.get("..", inputVideo))) {
                 inputVideo = Paths.get("..", inputVideo).toAbsolutePath().toString();
             } else if (Files.exists(Paths.get(System.getProperty("user.home"), "Downloads", inputVideo))) {
                 inputVideo = Paths.get(System.getProperty("user.home"), "Downloads", inputVideo).toAbsolutePath().toString();
             } else {
-                throw new FileNotFoundException("Cannot find video file: " + inputVideo + 
-                    "\nPlease make sure the Server Video Path in the frontend is an ABSOLUTE PATH (e.g. /Users/.../video.mp4)");
+                throw new FileNotFoundException("Cannot find video file: " + inputVideo);
             }
         }
 
-        // Create the results dir if it doesn't exist
-        Path resultDir = Paths.get("/Users/shubhamjunior/Documents/AI_Projects/cricket_content_editor/result");
-        if (!Files.exists(resultDir)) {
-            Files.createDirectories(resultDir);
+        // Determine result directory
+        Path resultPath;
+        if (customResultDir != null && !customResultDir.trim().isEmpty()) {
+            resultPath = Paths.get(customResultDir);
+        } else {
+            resultPath = Paths.get(System.getProperty("user.dir")).resolve("result");
+        }
+
+        if (!Files.exists(resultPath)) {
+            Files.createDirectories(resultPath);
         }
 
         // Pre-flight Disk Space Check
-        long usableSpace = resultDir.toFile().getUsableSpace();
-        long minRequiredSpace = 1_000_000_000L; // 1 GB buffer for safety
+        long usableSpace = resultPath.toFile().getUsableSpace();
+        long minRequiredSpace = 500_000_000L; // 500MB buffer
         if (usableSpace < minRequiredSpace) {
-            throw new IOException("Insufficient disk space. Available: " + (usableSpace / 1024 / 1024) + "MB. At least 1000MB is required to safely process videos.");
+            throw new IOException("Insufficient disk space in " + resultPath);
         }
 
-        // Ensure the output file is definitively within the result directory
-        outputVideo = resultDir.resolve(Paths.get(outputVideo).getFileName()).toAbsolutePath().toString();
+        // Final output path
+        outputVideo = resultPath.resolve(Paths.get(outputVideo).getFileName()).toAbsolutePath().toString();
 
         // Pro-Grade Chunked Encoding Architecture for 100% Guaranteed Audio Sync.
         // The filter_complex approach drops audio frames on heavy MP4 files when used with fast-seek.
@@ -149,7 +173,7 @@ public class FfmpegService {
             double slowSeek = start - fastSeek;
             
             List<String> chunkCmd = java.util.Arrays.asList(
-                "ffmpeg", "-y",
+                ffmpegPath, "-y",
                 "-ss", String.valueOf(fastSeek),
                 "-i", inputVideo,
                 "-ss", String.valueOf(slowSeek),
@@ -175,14 +199,19 @@ public class FfmpegService {
             }
         }
         
-        List<String> stitchCmd = java.util.Arrays.asList(
-            "ffmpeg", "-y",
+        List<String> stitchCmd = new java.util.ArrayList<>(java.util.Arrays.asList(
+            ffmpegPath, "-y",
             "-f", "concat",
             "-safe", "0",
             "-i", listFile.toAbsolutePath().toString(),
-            "-c", "copy",
-            outputVideo
-        );
+            "-c", "copy"
+        ));
+        
+        if (licenseId != null && !licenseId.isEmpty()) {
+            stitchCmd.add("-metadata");
+            stitchCmd.add("comment=LicenseID: " + licenseId);
+        }
+        stitchCmd.add(outputVideo);
         
         runProcess(stitchCmd);
         
@@ -227,7 +256,7 @@ public class FfmpegService {
     private double getVideoDuration(String inputVideo) {
         try {
             List<String> command = java.util.Arrays.asList(
-                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                ffprobePath, "-v", "error", "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1", inputVideo
             );
             

@@ -1,0 +1,46 @@
+name: Release Desktop App
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Make scripts executable
+        if: matrix.os == 'macos-latest'
+        run: |
+          chmod +x ./scripts/build-jre.sh
+          chmod +x ./backend/mvnw
+
+      - name: Install dependencies
+        run: |
+          npm install
+          cd frontend && npm install
+
+      - name: Build and Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm run dist
+        shell: bash
