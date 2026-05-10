@@ -13,6 +13,7 @@ node_modules/
 **/dist/
 dist/
 dist_desktop/
+dist-main.js
 
 # Bundled Binaries & Runtimes
 bin/darwin/
