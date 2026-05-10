@@ -4,6 +4,8 @@
 # Temporary outputs
 result/
 input.mp4
+*.dat
+license.dat
 
 # Node dependencies (Recursive)
 **/node_modules/
