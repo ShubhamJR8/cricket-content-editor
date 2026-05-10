@@ -4,6 +4,8 @@
 # Temporary outputs
 result/
 input.mp4
+*.dat
+license.dat
 
 # Node dependencies (Recursive)
 **/node_modules/
@@ -13,12 +15,14 @@ node_modules/
 **/dist/
 dist/
 dist_desktop/
+dist-main.js
 
 # Bundled Binaries & Runtimes
 bin/darwin/
 bin/win32/
 bin/linux/
 jre/
+jre-win/
 
 # Logs
 *.log

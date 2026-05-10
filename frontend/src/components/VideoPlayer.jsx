@@ -10,7 +10,7 @@ const VideoPlaceholder = () => (
 );
 
 const VideoPlayer = () => {
-  const { videoUrl, videoRef, handleTimeUpdate, handleLoadedData, togglePlay, isPlaying } = useVideoEditor();
+  const { videoUrl, videoRef, handleTimeUpdate, handleLoadedData, togglePlay, isPlaying, setIsPlaying } = useVideoEditor();
 
   return (
     <div className="flex-1 relative flex items-center justify-center p-4 bg-black">
@@ -22,6 +22,7 @@ const VideoPlayer = () => {
           onTimeUpdate={handleTimeUpdate}
           onLoadedData={handleLoadedData}
           onClick={togglePlay}
+          onEnded={() => setIsPlaying(false)}
         />
       ) : (
         <div className="text-zinc-600 flex flex-col items-center">

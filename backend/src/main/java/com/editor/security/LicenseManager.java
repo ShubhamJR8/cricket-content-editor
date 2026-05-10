@@ -26,7 +26,9 @@ public class LicenseManager {
     public LicenseManager() {
         try {
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance(ALGORITHM);
-            keyGen.initialize(2048);
+            SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
+            random.setSeed("cricket-editor-beta-secret-seed".getBytes());
+            keyGen.initialize(2048, random);
             KeyPair pair = keyGen.generateKeyPair();
             this.privateKey = pair.getPrivate();
             this.publicKey = pair.getPublic();

@@ -36,7 +36,7 @@ function createMainWindow() {
       nodeIntegration: true,
       contextIsolation: false, // Set to false for easier context access in this MVP
     },
-    title: "Cricket Content Editor"
+    title: "Reel Cricket"
   });
 
   if (isDev) {
@@ -155,6 +155,23 @@ ipcMain.handle('open-directory-dialog', async () => {
     return filePaths[0];
   }
   return null;
+});
+
+const { shell } = require('electron');
+const fs = require('fs');
+
+ipcMain.handle('open-path', async (event, targetPath) => {
+  try {
+    if (!fs.existsSync(targetPath)) {
+      fs.mkdirSync(targetPath, { recursive: true });
+    }
+    const errorMessage = await shell.openPath(targetPath);
+    if (errorMessage) {
+      console.error('Failed to open path natively:', errorMessage);
+    }
+  } catch (err) {
+    console.error('Error in open-path handler:', err);
+  }
 });
 
 app.on('ready', () => {

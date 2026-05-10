@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { FileVideo, CheckCircle, XCircle, Loader2, FolderOpen } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { CheckCircle, XCircle, FolderOpen } from 'lucide-react';
 import { VideoEditorProvider, useVideoEditor } from '../context/VideoEditorContext';
 import VideoPlayer from './VideoPlayer';
 import TimelineControls from './TimelineControls';
@@ -10,34 +10,21 @@ const VideoEditorLayout = () => {
     videoFile, 
     handleFileChange, 
     loadDemoVideo, 
-    backendPath, 
-    setBackendPath,
-    selectVideoViaElectron,
     outputPath,
     selectOutputFolderViaElectron
   } = useVideoEditor();
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [pathStatus, setPathStatus] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsRef = useRef(null);
 
-  const verifyPath = async () => {
-    if (!backendPath) return;
-    setIsVerifying(true);
-    setPathStatus(null);
-    try {
-      const response = await fetch('http://localhost:8080/api/video/verify-path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: backendPath }),
-      });
-      const data = await response.json();
-      setPathStatus(data.exists ? 'success' : 'error');
-    } catch (error) {
-      console.error("Error verifying path:", error);
-      setPathStatus('error');
-    } finally {
-      setIsVerifying(false);
-    }
-  };
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+        setShowSettings(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   if (useVideoEditor().killSwitchError) {
     return (
@@ -52,24 +39,19 @@ const VideoEditorLayout = () => {
   }
 
   return (
-    <div className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[calc(100vh-2rem)] min-h-[800px]">
+    <div className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-screen max-h-screen">
       {/* HEADER */}
-      <div className="p-4 bg-zinc-950 flex flex-col sm:flex-row gap-4 items-center justify-between border-b border-zinc-800 shrink-0">
-        <div className="flex gap-2">
+      <div className="p-4 bg-zinc-950 flex flex-wrap gap-4 items-center justify-between border-b border-zinc-800 shrink-0">
+        <div className="flex flex-wrap gap-2">
+          
           <button
             type="button"
-            onClick={selectVideoViaElectron}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition text-sm font-medium shadow-lg shadow-indigo-500/20"
+            onClick={handleFileChange}
+            className="flex items-center gap-2 cursor-pointer bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition text-sm font-medium shadow-lg shadow-indigo-500/20"
           >
             <FolderOpen size={18} />
-            <span>Select Match</span>
+            <span>{videoFile ? videoFile.name : 'Select Match'}</span>
           </button>
-          
-          <label className="flex items-center gap-2 cursor-pointer bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2 rounded-lg transition border border-zinc-700">
-            <FileVideo size={18} />
-            <span className="text-sm font-medium">{videoFile ? videoFile.name : 'Preview Video'}</span>
-            <input type="file" id="hidden-file-input" accept="video/*" className="hidden" onChange={handleFileChange} />
-          </label>
           
           <button
             type="button"
@@ -79,59 +61,67 @@ const VideoEditorLayout = () => {
             Demo
           </button>
 
-          <button
-            type="button"
-            onClick={useVideoEditor().handleActivateLicense}
-            className="flex items-center gap-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-500 px-4 py-2 rounded-lg transition text-sm font-medium border border-amber-600/50"
-            title="Start your 30-Day Free Beta"
-          >
-            Start Free Beta
-          </button>
+          {useVideoEditor().isBetaExpired ? (
+            <button
+              type="button"
+              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-4 py-2 rounded-lg transition text-sm font-bold border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.5)]"
+              title="Upgrade to Pro version"
+            >
+              Upgrade to Pro
+            </button>
+          ) : useVideoEditor().isBetaActive ? (
+            <button
+              type="button"
+              disabled
+              className="flex items-center gap-2 bg-green-600/20 text-green-500 px-4 py-2 rounded-lg transition text-sm font-medium border border-green-600/50 cursor-default"
+              title="Beta is currently active"
+            >
+              <CheckCircle size={16} />
+              Beta Active
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={useVideoEditor().handleActivateLicense}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition text-sm font-medium border ${useVideoEditor().needsActivation ? 'bg-amber-500 text-black animate-pulse border-amber-400' : 'bg-amber-600/20 hover:bg-amber-600/30 text-amber-500 border-amber-600/50'}`}
+              title="Start your 30-Day Free Beta"
+            >
+              Start Free Beta
+            </button>
+          )}
         </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-500 text-[10px] text-right leading-tight">Server Video Path<br />(Absolute Path)</span>
-            <div className="relative flex items-center">
-              <input
-                type="text"
-                className={`bg-zinc-800 text-white text-xs px-2 py-1.5 rounded-l border ${pathStatus === 'success' ? 'border-green-500' : pathStatus === 'error' ? 'border-red-500' : 'border-zinc-700'} focus:outline-none focus:border-indigo-500 w-48 md:w-64`}
-                value={backendPath}
-                onChange={(e) => {
-                  setBackendPath(e.target.value);
-                  setPathStatus(null);
-                }}
-                title="Absolute path to the video"
-              />
-              <button
-                onClick={verifyPath}
-                disabled={isVerifying || !backendPath}
-                className="bg-zinc-700 hover:bg-zinc-600 text-white px-3 py-1.5 rounded-r border-y border-r border-zinc-700 text-xs font-medium transition flex items-center justify-center"
-              >
-                {isVerifying ? <Loader2 size={12} className="animate-spin" /> : 'Verify'}
-              </button>
+        <div className="relative group" ref={settingsRef}>
+          <button 
+            onClick={() => setShowSettings(!showSettings)}
+            className="flex items-center gap-2 cursor-pointer bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-2 rounded-lg transition text-xs font-medium border border-zinc-700 select-none"
+          >
+            Advanced Settings
+          </button>
+          
+          {showSettings && (
+            <div className="absolute right-0 top-12 z-50 bg-zinc-900 border border-zinc-700 p-4 rounded-xl shadow-2xl flex flex-col gap-3 min-w-[300px]">
+              <div className="flex flex-col gap-1">
+                <span className="text-zinc-400 text-xs font-bold uppercase tracking-wider">Output Folder</span>
+                <div className="flex items-center bg-zinc-950 rounded border border-zinc-700 overflow-hidden">
+                  <input
+                    type="text"
+                    readOnly
+                    className="bg-transparent text-white text-xs px-2 py-2 w-full focus:outline-none cursor-default"
+                    value={outputPath}
+                    title={outputPath}
+                  />
+                  <button
+                    onClick={selectOutputFolderViaElectron}
+                    className="bg-zinc-800 hover:bg-zinc-700 text-white p-2 transition flex items-center justify-center border-l border-zinc-700"
+                    title="Change Output Folder"
+                  >
+                    <FolderOpen size={14} />
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-zinc-500 text-[10px] text-right">Output Folder</span>
-            <div className="flex items-center bg-zinc-800 rounded border border-zinc-700 overflow-hidden">
-              <input
-                type="text"
-                readOnly
-                className="bg-transparent text-white text-[11px] px-2 py-1 w-48 md:w-64 focus:outline-none cursor-default"
-                value={outputPath}
-                title={outputPath}
-              />
-              <button
-                onClick={selectOutputFolderViaElectron}
-                className="bg-zinc-700 hover:bg-zinc-600 text-white p-1.5 transition flex items-center justify-center border-l border-zinc-600"
-                title="Change Output Folder"
-              >
-                <FolderOpen size={14} />
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
