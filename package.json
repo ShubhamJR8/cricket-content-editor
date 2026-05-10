@@ -1,6 +1,6 @@
 {
-  "name": "cricket-reel-slicer",
-  "productName": "Cricket Reel Slicer",
+  "name": "reel-cricket",
+  "productName": "Reel Cricket",
   "version": "1.0.0",
   "description": "High-performance highlight generator for cricket match footage.",
   "main": "main.js",

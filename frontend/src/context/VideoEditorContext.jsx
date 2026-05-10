@@ -7,6 +7,15 @@ export const useVideoEditor = () => useContext(VideoEditorContext);
 
 const generateId = () => 'seg_' + Date.now() + Math.random().toString(36).substr(2, 9);
 
+const isElectronEnv = () => {
+  try {
+    return (window.process && window.process.type === 'renderer') ||
+           (typeof window.require === 'function' && !!window.require('electron'));
+  } catch {
+    return false;
+  }
+};
+
 export const VideoEditorProvider = ({ children }) => {
   const [videoFile, setVideoFile] = useState(null);
   const [videoUrl, setVideoUrl] = useState('');
@@ -18,8 +27,7 @@ export const VideoEditorProvider = ({ children }) => {
   const [outputPath, setOutputPath] = useState(() => {
     const saved = localStorage.getItem('editor_outputPath');
     if (saved) return saved;
-    const isElectron = window.process && window.process.type === 'renderer' || 
-                      (window.require && window.require('electron'));
+    const isElectron = isElectronEnv();
     if (isElectron) {
       const home = window.process.env.HOME || window.process.env.USERPROFILE;
       if (home) {
@@ -36,6 +44,8 @@ export const VideoEditorProvider = ({ children }) => {
   const trackerRef = useRef(null);
   const activeBoxRef = useRef(null);
   const timelineRef = useRef(null);
+  const dropMarkerRef = useRef(null);
+  const handleTimeUpdateRef = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -89,7 +99,8 @@ export const VideoEditorProvider = ({ children }) => {
         // Air gap check
         const lastCheck = localStorage.getItem('editor_last_network_check');
         if (!lastCheck) {
-           setKillSwitchError("Internet connection required for initial beta verification.");
+           // Forgiving on first run
+           localStorage.setItem('editor_last_network_check', Date.now().toString());
         } else {
            const timeSince = Date.now() - parseInt(lastCheck);
            if (timeSince > 3 * 24 * 60 * 60 * 1000 || timeSince < 0) {
@@ -140,6 +151,24 @@ export const VideoEditorProvider = ({ children }) => {
 
   const removeSegment = (id) => {
     setSegments(prev => prev.filter(s => s.id !== id));
+  };
+
+  const removePlayer = (playerId) => {
+    if (window.confirm("Are you sure you want to remove this player? Their clips will be moved to Unassigned.")) {
+      setPlayers(prev => prev.filter(p => p.id !== playerId));
+      setSegments(prev => {
+        const unassigned = prev.filter(s => s.playerId === null);
+        const playerSegs = prev.filter(s => s.playerId === playerId);
+        const others = prev.filter(s => s.playerId !== null && s.playerId !== playerId);
+        
+        // Move to unassigned, but filter out exact duplicates (same start & end)
+        const uniqueReturnedSegs = playerSegs.filter(ps => 
+          !unassigned.some(us => us.start === ps.start && us.end === ps.end)
+        ).map(s => ({ ...s, playerId: null }));
+        
+        return [...unassigned, ...uniqueReturnedSegs, ...others].sort((a, b) => a.start - b.start);
+      });
+    }
   };
 
   const formatTime = (seconds) => {
@@ -222,34 +251,45 @@ export const VideoEditorProvider = ({ children }) => {
     });
   };
 
+  // Keep refs current so the keyboard handler never uses stale closures
+  dropMarkerRef.current = dropMarker;
+  handleTimeUpdateRef.current = handleTimeUpdate;
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'textarea') return;
 
       if (e.key.toLowerCase() === 'm') {
-        dropMarker();
+        dropMarkerRef.current();
       }
       if (e.code === 'Space') {
         e.preventDefault();
-        togglePlay();
+        if (!videoRef.current) return;
+        if (videoRef.current.paused) {
+          videoRef.current.play();
+          setIsPlaying(true);
+        } else {
+          videoRef.current.pause();
+          setIsPlaying(false);
+        }
       }
       if (e.key === 'ArrowLeft') {
         if (videoRef.current) {
           videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
-          if (!isPlaying) setTimeout(handleTimeUpdate, 10);
+          handleTimeUpdateRef.current();
         }
       }
       if (e.key === 'ArrowRight') {
         if (videoRef.current) {
           videoRef.current.currentTime += 10;
-          if (!isPlaying) setTimeout(handleTimeUpdate, 10);
+          handleTimeUpdateRef.current();
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying]);
+  }, []);
 
   const handleTimelineClick = (e) => {
     if (!videoRef.current || !duration || !timelineRef.current) return;
@@ -327,8 +367,7 @@ export const VideoEditorProvider = ({ children }) => {
 
     try {
       let machineId = "browser-dev-mode";
-      const isElectron = window.process && window.process.type === 'renderer' || 
-                        (window.require && window.require('electron'));
+      const isElectron = isElectronEnv();
       if (isElectron) {
         const { ipcRenderer } = window.require('electron');
         machineId = await ipcRenderer.invoke('get-machine-id');
@@ -355,7 +394,16 @@ export const VideoEditorProvider = ({ children }) => {
 
       setResultMsg("Processing clips... please wait.");
 
+      let pollAttempts = 0;
+      const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
+
       const pollStatus = async () => {
+        pollAttempts++;
+        if (pollAttempts > MAX_POLL_ATTEMPTS) {
+          setResultMsg("Error: Processing timed out after 10 minutes. Please try again.");
+          setIsProcessing(false);
+          return;
+        }
         try {
           const statusRes = await axios.get(`http://localhost:8080/api/video/status/${jobId}`);
           const status = statusRes.data;
@@ -385,7 +433,18 @@ export const VideoEditorProvider = ({ children }) => {
     } catch (err) {
       console.error(err);
       if (err.response && err.response.status === 403) {
-        setResultMsg(`License Error: ${err.response.data?.error || 'Invalid or Expired License. Please activate.'}`);
+        const errMsg = err.response.data?.error || '';
+        if (errMsg.toLowerCase().includes("expired")) {
+            setIsBetaExpired(true);
+            setIsBetaActive(false);
+            localStorage.setItem('editor_beta_active', 'false');
+            setResultMsg(`License Expired. Please upgrade to Pro to continue using this feature.`);
+        } else if (errMsg.toLowerCase().includes("no license found")) {
+            setNeedsActivation(true);
+            setResultMsg(`Activation Required: You must click the "Start Free Beta" button at the top to use the slicing feature.`);
+        } else {
+            setResultMsg(`License Error: ${errMsg || 'Invalid License. Please activate.'}`);
+        }
       } else {
         const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message;
         setResultMsg(`Error: ${errorMsg}`);
@@ -397,7 +456,7 @@ export const VideoEditorProvider = ({ children }) => {
   const handleCopyUnassigned = () => {
     const unassigned = segments.filter(s => !s.playerId && s.end !== null);
     if (unassigned.length === 0) return;
-    const text = unassigned.map(s => `${formatTime(s.start)} - ${formatTime(s.end)}`).join('\\n');
+    const text = unassigned.map(s => `${formatTime(s.start)} - ${formatTime(s.end)}`).join('\n');
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -506,34 +565,10 @@ export const VideoEditorProvider = ({ children }) => {
     });
   };
 
-  const selectVideoViaElectron = async () => {
-    // Check if we are in Electron
-    const isElectron = window.process && window.process.type === 'renderer' || 
-                      (window.require && window.require('electron'));
-    
-    if (isElectron) {
-      try {
-        const { ipcRenderer } = window.require('electron');
-        const absolutePath = await ipcRenderer.invoke('open-file-dialog');
-        if (absolutePath) {
-          console.log("Selected absolute path:", absolutePath);
-          setBackendPath(absolutePath);
-          // We still need to trigger handleFileChange with a blob for preview if we want
-          // But for now, setting the backend path is the priority for Point 3.
-          // Optional: We could try to fetch the file via file:// protocol if security allows
-        }
-      } catch (err) {
-        console.error("Failed to open Electron file dialog:", err);
-      }
-    } else {
-      // Fallback for browser: trigger the hidden file input
-      document.getElementById('hidden-file-input')?.click();
-    }
-  };
+
 
   const selectOutputFolderViaElectron = async () => {
-    const isElectron = window.process && window.process.type === 'renderer' || 
-                      (window.require && window.require('electron'));
+    const isElectron = isElectronEnv();
     
     if (isElectron) {
       try {
@@ -548,21 +583,56 @@ export const VideoEditorProvider = ({ children }) => {
     }
   };
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (videoUrl) {
-        URL.revokeObjectURL(videoUrl);
+  const handleFileChange = async () => {
+    const isElectron = isElectronEnv();
+
+    if (isElectron) {
+      // Use Electron's native dialog which guarantees absolute file path
+      try {
+        const { ipcRenderer } = window.require('electron');
+        const filePath = await ipcRenderer.invoke('open-file-dialog');
+        if (filePath) {
+          if (videoUrl && videoUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(videoUrl);
+          }
+          const fileUrl = 'file://' + filePath;
+          const fileName = filePath.split(/[\\/]/).pop();
+          setVideoFile({ name: fileName, path: filePath });
+          setVideoUrl(fileUrl);
+          setBackendPath(filePath);
+        }
+      } catch (err) {
+        console.error('Electron file dialog failed, falling back to HTML input:', err);
+        _openBrowserFilePicker();
       }
-      setVideoFile(file);
-      setVideoUrl(URL.createObjectURL(file));
-      setBackendPath(`/Users/shubhamjunior/Documents/raw_videos/${file.name}`);
+    } else {
+      _openBrowserFilePicker();
     }
+  };
+
+  const _openBrowserFilePicker = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*';
+    input.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        if (videoUrl && videoUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(videoUrl);
+        }
+        setVideoFile(file);
+        setVideoUrl(URL.createObjectURL(file));
+        if (file.path) {
+          setBackendPath(file.path);
+        }
+      }
+    };
+    input.click();
   };
 
   useEffect(() => {
     return () => {
-      if (videoUrl) {
+      if (videoUrl && videoUrl.startsWith('blob:')) {
         URL.revokeObjectURL(videoUrl);
       }
     };
@@ -574,29 +644,41 @@ export const VideoEditorProvider = ({ children }) => {
     setBackendPath('../input.mp4');
   };
 
-  const downloadAllFiles = () => {
-    downloadUrls.forEach(url => {
-      if (url.startsWith('http')) {
-        window.open(url, '_blank');
-      } else {
-        window.open(`http://localhost:8080${url.startsWith('/') ? url : '/' + url}`, '_blank');
+  const openOutputFolder = async () => {
+    const isElectron = isElectronEnv();
+    if (isElectron) {
+      try {
+        const { ipcRenderer } = window.require('electron');
+        await ipcRenderer.invoke('open-path', outputPath);
+      } catch (err) {
+        console.error("Failed to open path", err);
       }
-    });
+    } else {
+      alert(`Output saved natively to: ${outputPath}`);
+    }
   };
 
 
 
+  const [isBetaActive, setIsBetaActive] = useState(() => {
+    return localStorage.getItem('editor_beta_active') === 'true';
+  });
+  const [isBetaExpired, setIsBetaExpired] = useState(false);
+  const [needsActivation, setNeedsActivation] = useState(false);
+
   const handleActivateLicense = async () => {
     try {
       let machineId = "browser-dev-mode";
-      const isElectron = window.process && window.process.type === 'renderer' || 
-                        (window.require && window.require('electron'));
+      const isElectron = isElectronEnv();
       if (isElectron) {
         const { ipcRenderer } = window.require('electron');
         machineId = await ipcRenderer.invoke('get-machine-id');
       }
 
       const res = await axios.post('http://localhost:8080/api/license/activate', { machineId });
+      setIsBetaActive(true);
+      setNeedsActivation(false);
+      localStorage.setItem('editor_beta_active', 'true');
       alert("Free Beta activated successfully! Expires in 30 days.");
     } catch (err) {
       console.error(err);
@@ -619,12 +701,13 @@ export const VideoEditorProvider = ({ children }) => {
     showImport, setShowImport,
     importText, setImportText,
     copied, setCopied,
-    clearSession, addPlayer, updatePlayerName, removeSegment, formatTime,
+    clearSession, addPlayer, updatePlayerName, removePlayer, removeSegment, formatTime,
     handleTimeUpdate, handleLoadedData, togglePlay, jumpTo, dropMarker,
     handleTimelineClick, handleApplyCuts, handleCopyUnassigned, handleBagImport,
-    handleImport, onDragEnd, handleFileChange, selectVideoViaElectron, 
+    handleImport, onDragEnd, handleFileChange, 
     outputPath, setOutputPath, selectOutputFolderViaElectron,
-    loadDemoVideo, downloadAllFiles, handleActivateLicense, killSwitchError
+    loadDemoVideo, openOutputFolder, handleActivateLicense, killSwitchError,
+    isBetaActive, setIsBetaActive, isBetaExpired, needsActivation
   };
 
   return (

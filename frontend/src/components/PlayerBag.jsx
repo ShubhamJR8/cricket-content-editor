@@ -1,9 +1,9 @@
 import React from 'react';
 import { Droppable } from '@hello-pangea/dnd';
-import { Clipboard } from 'lucide-react';
+import { Clipboard, Trash2 } from 'lucide-react';
 import TimestampChip from './TimestampChip';
 
-const PlayerBag = ({ player, segments, onRemoveSegment, onJump, formatTime, onNameChange, onImport }) => {
+const PlayerBag = ({ player, segments, onRemoveSegment, onJump, formatTime, onNameChange, onImport, onRemovePlayer }) => {
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
@@ -21,7 +21,7 @@ const PlayerBag = ({ player, segments, onRemoveSegment, onJump, formatTime, onNa
   };
 
   return (
-    <div className="flex flex-col bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-inner shrink-0 w-64">
+    <div className="flex flex-col bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-inner w-full">
       {/* Header */}
       <div className="flex items-center gap-3 p-3 bg-zinc-800 border-b border-zinc-700 group">
         <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shrink-0 uppercase">
@@ -37,13 +37,22 @@ const PlayerBag = ({ player, segments, onRemoveSegment, onJump, formatTime, onNa
           />
           <span className="text-xs text-zinc-400">{segments.length} segment{segments.length !== 1 ? 's' : ''}</span>
         </div>
-        <button 
-          onClick={handlePaste}
-          className="text-zinc-500 hover:text-white transition p-1 bg-zinc-700/50 hover:bg-zinc-600 rounded opacity-0 group-hover:opacity-100"
-          title="Paste copied timestamps"
-        >
-          <Clipboard size={14} />
-        </button>
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+          <button 
+            onClick={handlePaste}
+            className="text-zinc-500 hover:text-white transition p-1 bg-zinc-700/50 hover:bg-zinc-600 rounded"
+            title="Paste copied timestamps"
+          >
+            <Clipboard size={14} />
+          </button>
+          <button 
+            onClick={() => onRemovePlayer(player.id)}
+            className="text-rose-500/70 hover:text-rose-400 transition p-1 bg-rose-500/10 hover:bg-rose-500/20 rounded"
+            title="Remove Player"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
       {/* Drop Zone */}

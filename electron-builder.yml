@@ -1,5 +1,5 @@
-appId: com.cricket.reelslicer
-productName: Cricket Reel Slicer
+appId: com.reelcricket.app
+productName: Reel Cricket
 directories:
   output: dist_desktop
 extraMetadata:
@@ -9,31 +9,47 @@ files:
   - package.json
   - node_modules/**/*
   - frontend/dist/**/*
+  - splash.html
 extraResources:
   - from: backend/target/videoslicer-0.0.1-SNAPSHOT.jar
     to: backend.jar
-  - from: jre
-    to: jre
 nsis:
   oneClick: true
   allowToChangeInstallationDirectory: false
   createDesktopShortcut: true
+icon: reel_cricket.png
 mac:
-  target: dmg
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
   category: public.app-category.video
   extraResources:
     - from: bin/darwin
       to: bin/darwin
+    - from: jre
+      to: jre
 win:
-  target: nsis
+  target:
+    - target: nsis
+      arch:
+        - x64
   extraResources:
     - from: bin/win32
       to: bin/win32
+    - from: jre-win
+      to: jre
 linux:
-  target: AppImage
+  target:
+    - target: AppImage
+      arch:
+        - x64
   extraResources:
     - from: bin/linux
       to: bin/linux
+    - from: jre
+      to: jre
 publish:
   provider: github
   owner: ShubhamJR8

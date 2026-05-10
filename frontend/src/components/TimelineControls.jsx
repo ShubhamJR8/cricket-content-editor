@@ -6,8 +6,12 @@ import { useVideoEditor } from '../context/VideoEditorContext';
 const TimelineControls = () => {
   const { 
     trackerRef, formatTime, duration, isProcessing, segments, handleApplyCuts, resultMsg, 
-    timelineRef, handleTimelineClick, playheadRef, activeBoxRef 
+    timelineRef, handleTimelineClick, playheadRef, activeBoxRef, videoFile 
   } = useVideoEditor();
+
+  const isClipping = segments.some(s => s.end === null);
+  const hasSegments = segments.length > 0;
+  const noVideoLoaded = !videoFile;
 
   return (
     <div className="p-4 sm:p-6 bg-zinc-900 border-t border-zinc-800 shrink-0">
@@ -22,9 +26,10 @@ const TimelineControls = () => {
 
           <div className="flex flex-col items-end">
             <button
-              disabled={isProcessing || segments.length === 0}
+              disabled={isProcessing || segments.length === 0 || noVideoLoaded}
               onClick={handleApplyCuts}
-              className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white font-bold py-2.5 px-6 rounded-lg transition shadow-[0_0_15px_rgba(220,38,38,0.4)]"
+              className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2.5 px-6 rounded-lg transition shadow-[0_0_15px_rgba(220,38,38,0.4)]"
+              title={noVideoLoaded && hasSegments ? 'Load a video file first to apply cuts' : ''}
             >
               {isProcessing ? (
                 <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
@@ -38,6 +43,11 @@ const TimelineControls = () => {
             {resultMsg && (
               <p className="text-[10px] text-zinc-400 text-right mt-1 max-w-[200px] truncate" title={resultMsg}>
                 {resultMsg}
+              </p>
+            )}
+            {noVideoLoaded && hasSegments && (
+              <p className="text-[10px] text-amber-400 text-right mt-1 font-medium">
+                ⚠ Load a video to enable Apply Cuts
               </p>
             )}
           </div>
@@ -96,7 +106,23 @@ const TimelineControls = () => {
           })}
         </div>
 
-        <div className="text-[10px] text-zinc-500 text-center mt-2">Press 'M' during playback to drop a marker or click timeline to jump</div>
+        <div className="flex items-center justify-between mt-2">
+          <div className="text-[10px] text-zinc-500">Click timeline to jump</div>
+          
+          <div className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all duration-300 shadow-md flex items-center gap-2 ${isClipping ? 'bg-red-500/20 text-red-400 border border-red-500/50 animate-pulse' : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'}`}>
+            {isClipping ? (
+              <>
+                <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                Recording... Press 'M' to End Clip
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 rounded-full bg-indigo-400" />
+                Press 'M' to Start Clip (-2s buffer)
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

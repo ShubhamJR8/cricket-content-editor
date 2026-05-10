@@ -34,9 +34,24 @@ public class FfmpegService {
         public String status;
         public String message;
         public Map<String, String> resultUrls;
+        public long completedAt; // Timestamp when job finished (for TTL cleanup)
     }
 
     private final Map<String, JobStatus> jobMap = new ConcurrentHashMap<>();
+
+    // Cleanup completed jobs older than 1 hour to prevent memory leaks
+    private final java.util.concurrent.ScheduledExecutorService cleanupScheduler =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+
+    {
+        cleanupScheduler.scheduleAtFixedRate(() -> {
+            long cutoff = System.currentTimeMillis() - (60 * 60 * 1000); // 1 hour
+            jobMap.entrySet().removeIf(entry -> {
+                JobStatus s = entry.getValue();
+                return s.completedAt > 0 && s.completedAt < cutoff;
+            });
+        }, 10, 10, java.util.concurrent.TimeUnit.MINUTES);
+    }
 
     public JobStatus getJobStatus(String jobId) {
         return jobMap.get(jobId);
@@ -59,6 +74,7 @@ public class FfmpegService {
                 updatedStatus.status = "COMPLETED";
                 updatedStatus.message = "Success";
                 updatedStatus.resultUrls = results;
+                updatedStatus.completedAt = System.currentTimeMillis();
             } catch (Exception e) {
                 log.severe("Job " + jobId + " failed: " + e.getMessage());
                 JobStatus updatedStatus = jobMap.get(jobId);
@@ -67,8 +83,9 @@ public class FfmpegService {
                 Throwable root = e;
                 while (root.getCause() != null) root = root.getCause();
                 updatedStatus.message = root.getMessage() != null ? root.getMessage() : e.getMessage();
+                updatedStatus.completedAt = System.currentTimeMillis();
             }
-        });
+        }, executorService);
 
         return jobId;
     }
@@ -148,79 +165,96 @@ public class FfmpegService {
         Path tempDir = Files.createTempDirectory("video_slicer_chunks");
         List<Path> chunkPaths = new java.util.ArrayList<>();
         
-        for (int i = 0; i < segments.size(); i++) {
-            Segment seg = segments.get(i);
-            Path chunkPath = tempDir.resolve("chunk_" + i + ".mp4");
-            
-            double start = seg.start();
-            double end = seg.end();
-            
-            if (videoDuration > 0) {
-                if (start >= videoDuration) {
-                    log.warning("Skipping segment starting at " + start + " as it is beyond video duration " + videoDuration);
-                    continue;
+        try {
+            for (int i = 0; i < segments.size(); i++) {
+                Segment seg = segments.get(i);
+                Path chunkPath = tempDir.resolve("chunk_" + i + ".mp4");
+                
+                double start = seg.start();
+                double end = seg.end();
+                
+                if (videoDuration > 0) {
+                    if (start >= videoDuration) {
+                        log.warning("Skipping segment starting at " + start + " as it is beyond video duration " + videoDuration);
+                        continue;
+                    }
+                    if (end > videoDuration) {
+                        log.warning("Clamping segment end from " + end + " to " + videoDuration);
+                        end = videoDuration;
+                    }
                 }
-                if (end > videoDuration) {
-                    log.warning("Clamping segment end from " + end + " to " + videoDuration);
-                    end = videoDuration;
+                
+                double duration = end - start;
+                
+                // "Fast+Slow Seek" Trick: Jump quickly to 10 seconds before target, decode smoothly to the exact frame.
+                double fastSeek = Math.max(0.0, start - 10.0);
+                double slowSeek = start - fastSeek;
+                
+                List<String> chunkCmd = new java.util.ArrayList<>(java.util.Arrays.asList(
+                    ffmpegPath, "-y",
+                    "-ss", String.valueOf(fastSeek),
+                    "-i", inputVideo,
+                    "-ss", String.valueOf(slowSeek),
+                    "-t", String.valueOf(duration),
+                    "-c:v", "libx264",
+                    "-profile:v", "high",          // High profile preserves quality better than main
+                    "-level", "4.1",
+                    "-preset", "superfast",
+                    "-crf", "18",                  // Near-lossless quality to prevent visible degradation
+                    // Preserve source color metadata exactly — prevents color grading shifts
+                    "-colorspace", "bt709",
+                    "-color_primaries", "bt709",
+                    "-color_trc", "bt709",
+                    "-color_range", "tv",
+                    "-force_key_frames", "expr:eq(n,0)", // Ensure every chunk starts with a keyframe
+                    "-c:a", "aac",
+                    "-b:a", "192k",                // Lock bitrate to prevent concat mismatches
+                    "-ar", "48000",        // Unified audio rate prevents silent gaps during concat
+                    "-ac", "2",            // Forces stereo to prevent 5.1 surround sound player crashes
+                    "-avoid_negative_ts", "make_zero",   // Vital for preventing "frozen" first frames
+                    "-map_metadata", "-1",               // Clear old metadata per chunk
+                    "-video_track_timescale", "90000", // Unified timebase
+                    chunkPath.toAbsolutePath().toString()
+                ));
+                
+                runProcess(chunkCmd);
+                chunkPaths.add(chunkPath);
+            }
+            
+            // Now losslessly stitch the perfectly primed chunks together
+            Path listFile = tempDir.resolve("chunk_list.txt");
+            try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(listFile))) {
+                for (Path chunk : chunkPaths) {
+                    // Convert backslashes to forward slashes for cross-platform concat demuxer compatibility
+                    String chunkPathStr = chunk.toAbsolutePath().toString().replace("\\", "/");
+                    writer.println("file '" + chunkPathStr.replace("'", "'\\''") + "'");
                 }
             }
             
-            double duration = end - start;
-            
-            // "Fast+Slow Seek" Trick: Jump quickly to 10 seconds before target, decode smoothly to the exact frame.
-            double fastSeek = Math.max(0.0, start - 10.0);
-            double slowSeek = start - fastSeek;
-            
-            List<String> chunkCmd = java.util.Arrays.asList(
+            List<String> stitchCmd = new java.util.ArrayList<>(java.util.Arrays.asList(
                 ffmpegPath, "-y",
-                "-ss", String.valueOf(fastSeek),
-                "-i", inputVideo,
-                "-ss", String.valueOf(slowSeek),
-                "-t", String.valueOf(duration),
-                "-c:v", "libx264",
-                "-preset", "superfast",
-                "-crf", "23",
-                "-c:a", "aac",
-                "-ar", "48000",        // Unified audio rate prevents silent gaps during concat
-                "-video_track_timescale", "90000", // Unified timebase
-                chunkPath.toAbsolutePath().toString()
-            );
+                "-f", "concat",
+                "-safe", "0",
+                "-i", listFile.toAbsolutePath().toString(),
+                "-c", "copy",
+                "-movflags", "+faststart" // Move moov atom to front for instant web/social media playback
+            ));
             
-            runProcess(chunkCmd);
-            chunkPaths.add(chunkPath);
-        }
-        
-        // Now losslessly stitch the perfectly primed chunks together
-        Path listFile = tempDir.resolve("chunk_list.txt");
-        try (PrintWriter writer = new PrintWriter(Files.newBufferedWriter(listFile))) {
-            for (Path chunk : chunkPaths) {
-                writer.println("file '" + chunk.toAbsolutePath().toString().replace("'", "'\\''") + "'");
+            if (licenseId != null && !licenseId.isEmpty()) {
+                stitchCmd.add("-metadata");
+                stitchCmd.add("comment=LicenseID: " + licenseId);
             }
+            stitchCmd.add(outputVideo);
+            
+            runProcess(stitchCmd);
+        } finally {
+            // GUARANTEED CLEANUP: Always delete temp chunks even if encoding crashes
+            for (Path chunk : chunkPaths) {
+                try { Files.deleteIfExists(chunk); } catch (IOException ignored) {}
+            }
+            try { Files.deleteIfExists(tempDir.resolve("chunk_list.txt")); } catch (IOException ignored) {}
+            try { Files.deleteIfExists(tempDir); } catch (IOException ignored) {}
         }
-        
-        List<String> stitchCmd = new java.util.ArrayList<>(java.util.Arrays.asList(
-            ffmpegPath, "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", listFile.toAbsolutePath().toString(),
-            "-c", "copy"
-        ));
-        
-        if (licenseId != null && !licenseId.isEmpty()) {
-            stitchCmd.add("-metadata");
-            stitchCmd.add("comment=LicenseID: " + licenseId);
-        }
-        stitchCmd.add(outputVideo);
-        
-        runProcess(stitchCmd);
-        
-        // Cleanup temp files
-        for (Path chunk : chunkPaths) {
-            Files.deleteIfExists(chunk);
-        }
-        Files.deleteIfExists(listFile);
-        Files.deleteIfExists(tempDir);
 
         return outputVideo;
     }

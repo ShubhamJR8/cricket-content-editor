@@ -19,6 +19,7 @@ bin/darwin/
 bin/win32/
 bin/linux/
 jre/
+jre-win/
 
 # Logs
 *.log
