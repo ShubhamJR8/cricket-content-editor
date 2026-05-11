@@ -1,7 +1,7 @@
 {
   "name": "reel-cricket",
   "productName": "Reel Cricket",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "High-performance highlight generator for cricket match footage.",
   "main": "main.js",
   "scripts": {
