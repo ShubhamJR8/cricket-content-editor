@@ -10,7 +10,7 @@ const generateId = () => 'seg_' + Date.now() + Math.random().toString(36).substr
 const isElectronEnv = () => {
   try {
     return (window.process && window.process.type === 'renderer') ||
-           (typeof window.require === 'function' && !!window.require('electron'));
+      (typeof window.require === 'function' && !!window.require('electron'));
   } catch {
     return false;
   }
@@ -58,7 +58,7 @@ export const VideoEditorProvider = ({ children }) => {
         if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
           return parsed.data;
         }
-      } catch(e) {}
+      } catch (e) { }
     }
     return [
       { id: 'player_1', name: 'Player 1' },
@@ -74,7 +74,7 @@ export const VideoEditorProvider = ({ children }) => {
         if (Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
           return parsed.data;
         }
-      } catch(e) {}
+      } catch (e) { }
     }
     return [];
   });
@@ -92,20 +92,20 @@ export const VideoEditorProvider = ({ children }) => {
       try {
         const res = await axios.get("https://raw.githubusercontent.com/ShubhamJR8/cricket-content-editor/main/beta-status.json");
         if (res.data && res.data.active === false) {
-           setKillSwitchError("This Beta has concluded. Please visit our website to upgrade to the paid version.");
+          setKillSwitchError("This Beta has concluded. Please visit our website to upgrade to the paid version.");
         }
         localStorage.setItem('editor_last_network_check', Date.now().toString());
       } catch (err) {
         // Air gap check
         const lastCheck = localStorage.getItem('editor_last_network_check');
         if (!lastCheck) {
-           // Forgiving on first run
-           localStorage.setItem('editor_last_network_check', Date.now().toString());
+          // Forgiving on first run
+          localStorage.setItem('editor_last_network_check', Date.now().toString());
         } else {
-           const timeSince = Date.now() - parseInt(lastCheck);
-           if (timeSince > 3 * 24 * 60 * 60 * 1000 || timeSince < 0) {
-              setKillSwitchError("App has been offline for too long. Please connect to the internet to verify beta status.");
-           }
+          const timeSince = Date.now() - parseInt(lastCheck);
+          if (timeSince > 3 * 24 * 60 * 60 * 1000 || timeSince < 0) {
+            setKillSwitchError("App has been offline for too long. Please connect to the internet to verify beta status.");
+          }
         }
       }
     };
@@ -160,12 +160,12 @@ export const VideoEditorProvider = ({ children }) => {
         const unassigned = prev.filter(s => s.playerId === null);
         const playerSegs = prev.filter(s => s.playerId === playerId);
         const others = prev.filter(s => s.playerId !== null && s.playerId !== playerId);
-        
+
         // Move to unassigned, but filter out exact duplicates (same start & end)
-        const uniqueReturnedSegs = playerSegs.filter(ps => 
+        const uniqueReturnedSegs = playerSegs.filter(ps =>
           !unassigned.some(us => us.start === ps.start && us.end === ps.end)
         ).map(s => ({ ...s, playerId: null }));
-        
+
         return [...unassigned, ...uniqueReturnedSegs, ...others].sort((a, b) => a.start - b.start);
       });
     }
@@ -236,7 +236,7 @@ export const VideoEditorProvider = ({ children }) => {
       const lastSeg = newSegments[newSegments.length - 1];
 
       if (!lastSeg || lastSeg.end !== null) {
-        const bufferedStart = Math.max(0, current - 2);
+        const bufferedStart = Math.max(0, current - 1);
         newSegments.push({ id: generateId(), start: bufferedStart, end: null, playerId: null });
       } else {
         const updatedSeg = { ...lastSeg };
@@ -435,15 +435,15 @@ export const VideoEditorProvider = ({ children }) => {
       if (err.response && err.response.status === 403) {
         const errMsg = err.response.data?.error || '';
         if (errMsg.toLowerCase().includes("expired")) {
-            setIsBetaExpired(true);
-            setIsBetaActive(false);
-            localStorage.setItem('editor_beta_active', 'false');
-            setResultMsg(`License Expired. Please upgrade to Pro to continue using this feature.`);
+          setIsBetaExpired(true);
+          setIsBetaActive(false);
+          localStorage.setItem('editor_beta_active', 'false');
+          setResultMsg(`License Expired. Please upgrade to Pro to continue using this feature.`);
         } else if (errMsg.toLowerCase().includes("no license found")) {
-            setNeedsActivation(true);
-            setResultMsg(`Activation Required: You must click the "Start Free Beta" button at the top to use the slicing feature.`);
+          setNeedsActivation(true);
+          setResultMsg(`Activation Required: You must click the "Start Free Beta" button at the top to use the slicing feature.`);
         } else {
-            setResultMsg(`License Error: ${errMsg || 'Invalid License. Please activate.'}`);
+          setResultMsg(`License Error: ${errMsg || 'Invalid License. Please activate.'}`);
         }
       } else {
         const errorMsg = err.response?.data?.message || err.response?.data?.error || err.message;
@@ -488,7 +488,7 @@ export const VideoEditorProvider = ({ children }) => {
       for (let i = 0; i < matches.length; i += 2) {
         const start = timeToSeconds(matches[i]);
         const end = i + 1 < matches.length ? timeToSeconds(matches[i + 1]) : null;
-        
+
         if (end !== null && start < end) {
           const exists = prev.some(s => s.playerId === playerId && s.start === start && s.end === end);
           const newlyAdded = newSegments.some(s => s.start === start && s.end === end);
@@ -528,11 +528,11 @@ export const VideoEditorProvider = ({ children }) => {
       for (let i = 0; i < matches.length; i += 2) {
         const start = timeToSeconds(matches[i]);
         const end = i + 1 < matches.length ? timeToSeconds(matches[i + 1]) : null;
-        
+
         if (end !== null && start < end) {
           const exists = currentSegments.some(s => s.playerId === null && s.start === start && s.end === end);
           const newlyAdded = newSegments.some(s => s.start === start && s.end === end);
-          
+
           if (!exists && !newlyAdded) {
             newSegments.push({ id: generateId(), start, end, playerId: null });
           }
@@ -569,7 +569,7 @@ export const VideoEditorProvider = ({ children }) => {
 
   const selectOutputFolderViaElectron = async () => {
     const isElectron = isElectronEnv();
-    
+
     if (isElectron) {
       try {
         const { ipcRenderer } = window.require('electron');
@@ -704,7 +704,7 @@ export const VideoEditorProvider = ({ children }) => {
     clearSession, addPlayer, updatePlayerName, removePlayer, removeSegment, formatTime,
     handleTimeUpdate, handleLoadedData, togglePlay, jumpTo, dropMarker,
     handleTimelineClick, handleApplyCuts, handleCopyUnassigned, handleBagImport,
-    handleImport, onDragEnd, handleFileChange, 
+    handleImport, onDragEnd, handleFileChange,
     outputPath, setOutputPath, selectOutputFolderViaElectron,
     loadDemoVideo, openOutputFolder, handleActivateLicense, killSwitchError,
     isBetaActive, setIsBetaActive, isBetaExpired, needsActivation
