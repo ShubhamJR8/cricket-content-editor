@@ -29,7 +29,9 @@ public class LicenseController {
 
             String userHome = System.getProperty("user.home");
             File lockFile = new File(userHome, ".cricket_editor_trial_lock");
-            if (lockFile.exists()) {
+            File licenseFile = new File(userHome, ".cricket_editor_license.dat");
+            
+            if (lockFile.exists() && licenseFile.exists()) {
                 return ResponseEntity.status(400)
                         .body(Map.of("error", "A trial has already been claimed on this machine."));
             }

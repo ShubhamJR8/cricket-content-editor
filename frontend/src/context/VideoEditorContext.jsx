@@ -352,7 +352,7 @@ export const VideoEditorProvider = ({ children }) => {
       return {
         playerId: g.player.id,
         playerName: g.player.name,
-        segments: merged
+        segments: merged.filter(s => s.end - s.start > 0)
       };
     });
 
@@ -395,12 +395,12 @@ export const VideoEditorProvider = ({ children }) => {
       setResultMsg("Processing clips... please wait.");
 
       let pollAttempts = 0;
-      const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
+      const MAX_POLL_ATTEMPTS = 1200; // ~60 minutes at 3s intervals
 
       const pollStatus = async () => {
         pollAttempts++;
         if (pollAttempts > MAX_POLL_ATTEMPTS) {
-          setResultMsg("Error: Processing timed out after 10 minutes. Please try again.");
+          setResultMsg("Error: Processing timed out after 60 minutes. Please try again or reduce the number of clips.");
           setIsProcessing(false);
           return;
         }
@@ -439,10 +439,14 @@ export const VideoEditorProvider = ({ children }) => {
           setIsBetaActive(false);
           localStorage.setItem('editor_beta_active', 'false');
           setResultMsg(`License Expired. Please upgrade to Pro to continue using this feature.`);
-        } else if (errMsg.toLowerCase().includes("no license found")) {
+        } else if (errMsg.toLowerCase().includes("no license found") || errMsg.toLowerCase().includes("mismatch")) {
+          setIsBetaActive(false);
+          localStorage.setItem('editor_beta_active', 'false');
           setNeedsActivation(true);
           setResultMsg(`Activation Required: You must click the "Start Free Beta" button at the top to use the slicing feature.`);
         } else {
+          setIsBetaActive(false);
+          localStorage.setItem('editor_beta_active', 'false');
           setResultMsg(`License Error: ${errMsg || 'Invalid License. Please activate.'}`);
         }
       } else {

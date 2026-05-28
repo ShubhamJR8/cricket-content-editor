@@ -1,0 +1,10 @@
+--- backend/src/main/java/com/editor/service/FfmpegService.java
++++ backend/src/main/java/com/editor/service/FfmpegService.java
+@@ -83,6 +83,7 @@
+                 Throwable root = e;
+                 while (root.getCause() != null) root = root.getCause();
+                 updatedStatus.message = root.getMessage() != null ? root.getMessage() : e.getMessage();
++                log.log(java.util.logging.Level.SEVERE, "Root cause stack trace", root);
+                 updatedStatus.completedAt = System.currentTimeMillis();
+             }
+         });

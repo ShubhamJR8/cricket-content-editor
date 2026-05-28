@@ -35,6 +35,7 @@ function createMainWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false, // Set to false for easier context access in this MVP
+      webSecurity: false // Allow loading local files via file://
     },
     title: "Reel Cricket"
   });

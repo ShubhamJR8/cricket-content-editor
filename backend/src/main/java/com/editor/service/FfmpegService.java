@@ -83,9 +83,10 @@ public class FfmpegService {
                 Throwable root = e;
                 while (root.getCause() != null) root = root.getCause();
                 updatedStatus.message = root.getMessage() != null ? root.getMessage() : e.getMessage();
+                log.log(java.util.logging.Level.SEVERE, "Root cause stack trace", root);
                 updatedStatus.completedAt = System.currentTimeMillis();
             }
-        }, executorService);
+        });
 
         return jobId;
     }
@@ -110,7 +111,11 @@ public class FfmpegService {
                     String downloadUrl = absoluteOutputPath;
                     resultUrls.put(group.playerId(), downloadUrl);
                 } catch (Exception e) {
-                    throw new CompletionException("Failed group " + group.playerId(), e);
+                    String errorMsg = e.getMessage();
+                    Throwable root = e;
+                    while (root.getCause() != null) root = root.getCause();
+                    if (root.getMessage() != null) errorMsg = root.getMessage();
+                    throw new CompletionException("Failed group " + group.playerId() + " due to: " + errorMsg, e);
                 }
             }, executorService);
             futures.add(future);
@@ -147,9 +152,9 @@ public class FfmpegService {
 
         // Pre-flight Disk Space Check
         long usableSpace = resultPath.toFile().getUsableSpace();
-        long minRequiredSpace = 500_000_000L; // 500MB buffer
+        long minRequiredSpace = 1_500_000_000L; // 1.5GB buffer
         if (usableSpace < minRequiredSpace) {
-            throw new IOException("Insufficient disk space in " + resultPath);
+            throw new IOException("Insufficient disk space. Please free up at least 1.5 GB on your drive.");
         }
 
         // Final output path
@@ -186,6 +191,11 @@ public class FfmpegService {
                 
                 double duration = end - start;
                 
+                if (duration <= 0) {
+                    log.warning("Skipping segment with invalid duration: " + duration);
+                    continue;
+                }
+                
                 // "Fast+Slow Seek" Trick: Jump quickly to 10 seconds before target, decode smoothly to the exact frame.
                 double fastSeek = Math.max(0.0, start - 10.0);
                 double slowSeek = start - fastSeek;
@@ -197,6 +207,7 @@ public class FfmpegService {
                     "-ss", String.valueOf(slowSeek),
                     "-t", String.valueOf(duration),
                     "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",         // Force 8-bit pixel format, high profile doesn't support 10-bit
                     "-profile:v", "high",          // High profile preserves quality better than main
                     "-level", "4.1",
                     "-preset", "superfast",
