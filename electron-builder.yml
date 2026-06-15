@@ -39,7 +39,7 @@ win:
   extraResources:
     - from: bin/win32
       to: bin/win32
-    - from: jre-win
+    - from: jre
       to: jre
 linux:
   target:
