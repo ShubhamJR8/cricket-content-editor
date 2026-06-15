@@ -19,6 +19,7 @@ nsis:
   createDesktopShortcut: true
 icon: reel_cricket.png
 mac:
+  identity: null
   target:
     - target: dmg
       arch:
